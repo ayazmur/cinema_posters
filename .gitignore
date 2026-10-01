@@ -1,0 +1,34 @@
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Сборка
+build/
+dist/
+*.egg-info/
+__pycache__/
+
+# IDE
+.idea/
+.vscode/
+
+# Данные пользователя
+data/settings.json
+projects/*.json
+!projects/.gitkeep
+posters/*
+!posters/.gitkeep
+output/*
+!output/.gitkeep
+
+# Временные файлы
+*.tmp
+*~
+Thumbs.db
+desktop.ini

@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Капитан Невельской и земли черного дракона",
+    "age": "12+",
+    "price": 200,
+    "time": "12:00",
+    "pushkin": true,
+    "poster": ""
+  },
+  {
+    "title": "Приключения Мамонтенка",
+    "age": "6+",
+    "price": 200,
+    "time": "13:50",
+    "pushkin": false,
+    "poster": ""
+  },
+  {
+    "title": "Царевна Несмеяна",
+    "age": "6+",
+    "price": 200,
+    "time": "15:15",
+    "pushkin": false,
+    "poster": ""
+  },
+  {
+    "title": "Как Иван в Сказку попал",
+    "age": "6+",
+    "price": 250,
+    "time": "17:00",
+    "pushkin": false,
+    "poster": ""
+  },
+  {
+    "title": "Девятая планета",
+    "age": "16+",
+    "price": 250,
+    "time": "19:15",
+    "pushkin": true,
+    "poster": ""
+  }
+]
