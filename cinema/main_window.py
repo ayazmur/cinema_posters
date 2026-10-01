@@ -13,7 +13,7 @@ from PyQt6.QtCore import QDate, QTime, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSizePolicy,
     QSpinBox, QSplitter, QStatusBar, QTimeEdit, QToolBar, QVBoxLayout, QWidget,
 )
@@ -169,7 +169,12 @@ class MainWindow(QMainWindow):
         ed = QVBoxLayout(editor)
         self.poster_label = PosterDropLabel()
         self.poster_label.posterDropped.connect(self._poster_dropped_here)
+        self.poster_label.clicked.connect(self.choose_poster)
         ed.addWidget(self.poster_label)
+        self.poster_info = QLabel("Постер не выбран")
+        self.poster_info.setObjectName("Hint")
+        self.poster_info.setWordWrap(True)
+        ed.addWidget(self.poster_info)
 
         form = QFormLayout()
         self.title_edit = QLineEdit()
@@ -192,13 +197,23 @@ class MainWindow(QMainWindow):
         form.addRow(self.pushkin_check)
         ed.addLayout(form)
 
-        ed_buttons = QHBoxLayout()
-        poster_btn = QPushButton("Постер…")
+        ed_buttons = QGridLayout()
+        ed_buttons.setHorizontalSpacing(6)
+        ed_buttons.setVerticalSpacing(6)
+        poster_btn = QPushButton("Выбрать файл…")
+        paste_poster_btn = QPushButton("Из буфера")
+        paste_poster_btn.setToolTip("Вставить изображение из буфера обмена")
+        remove_poster_btn = QPushButton("Убрать постер")
         save_movie = QPushButton("Сохранить фильм")
+        save_movie.setObjectName("Primary")
         poster_btn.clicked.connect(self.choose_poster)
+        paste_poster_btn.clicked.connect(self.paste_poster)
+        remove_poster_btn.clicked.connect(self.remove_poster)
         save_movie.clicked.connect(self.save_movie)
-        ed_buttons.addWidget(poster_btn)
-        ed_buttons.addWidget(save_movie)
+        ed_buttons.addWidget(poster_btn, 0, 0)
+        ed_buttons.addWidget(paste_poster_btn, 0, 1)
+        ed_buttons.addWidget(remove_poster_btn, 1, 0)
+        ed_buttons.addWidget(save_movie, 1, 1)
         ed.addLayout(ed_buttons)
         layout.addWidget(editor, 4)
         return panel
@@ -398,7 +413,9 @@ class MainWindow(QMainWindow):
         self.duration_spin.setValue(movie.duration)
         self.price_spin.setValue(movie.price)
         self.pushkin_check.setChecked(movie.pushkin)
-        self.poster_label.set_image(storage.resolve_poster(movie.poster))
+        poster_path = storage.resolve_poster(movie.poster)
+        self.poster_label.set_image(poster_path)
+        self.poster_info.setText(poster_path.name if poster_path else "Постер не выбран")
 
     def _clear_movie_form(self) -> None:
         self.title_edit.clear()
@@ -408,6 +425,7 @@ class MainWindow(QMainWindow):
         self.price_spin.setValue(0)
         self.pushkin_check.setChecked(False)
         self.poster_label.set_image(None)
+        self.poster_info.setText("Сначала выберите фильм")
 
     def _collect_movie_form(self, movie: Movie) -> None:
         movie.title = self.title_edit.text().strip() or "Без названия"
@@ -468,19 +486,56 @@ class MainWindow(QMainWindow):
         if not movie:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Выберите постер", "", "Images (*.png *.jpg *.jpeg *.webp *.bmp)")
+            self, "Выберите постер", str(paths.POSTERS),
+            "Изображения (*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tif *.tiff)")
         if path:
             self._assign_poster(movie, Path(path))
 
+    def paste_poster(self) -> None:
+        movie = self._movie_by_id(self.current_movie_id)
+        if not movie:
+            QMessageBox.information(self, "Сначала выберите фильм",
+                                    "Выберите фильм в библиотеке, затем вставьте постер.")
+            return
+        clipboard_image = QApplication.clipboard().image()
+        if clipboard_image.isNull():
+            QMessageBox.information(self, "В буфере нет изображения",
+                                    "Скопируйте изображение, затем нажмите «Вставить».")
+            return
+        paths.OUTPUT.mkdir(parents=True, exist_ok=True)
+        temporary = paths.OUTPUT / "_clipboard-poster.png"
+        try:
+            if not clipboard_image.save(str(temporary), "PNG"):
+                raise OSError("Не удалось сохранить изображение из буфера.")
+            self._assign_poster(movie, temporary)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def remove_poster(self) -> None:
+        movie = self._movie_by_id(self.current_movie_id)
+        if not movie:
+            return
+        movie.poster = ""
+        storage.save_movies(self.movies)
+        self.poster_label.set_image(None)
+        self.poster_info.setText("Постер не выбран")
+        self.statusBar().showMessage(f"Постер фильма «{movie.title}» удалён", 2500)
+
     def _assign_poster(self, movie: Movie, path: Path) -> None:
         try:
+            from PIL import Image
+
+            with Image.open(path) as image:
+                image.verify()
             movie.poster = storage.import_poster(path)
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Ошибка", f"Не удалось загрузить постер:\n{exc}")
             return
         storage.save_movies(self.movies)
         if movie.id == self.current_movie_id:
-            self.poster_label.set_image(storage.resolve_poster(movie.poster))
+            poster_path = storage.resolve_poster(movie.poster)
+            self.poster_label.set_image(poster_path)
+            self.poster_info.setText(poster_path.name if poster_path else "Постер не выбран")
         self.statusBar().showMessage(f"Постер «{movie.title}» обновлён", 2500)
 
     def _poster_dropped_here(self, path: str) -> None:
@@ -495,6 +550,7 @@ class MainWindow(QMainWindow):
         movie = self._movie_by_id(item.data(Qt.ItemDataRole.UserRole))
         if movie:
             self._assign_poster(movie, Path(path))
+            self.movie_list.setCurrentRow(row)
 
     # ============================================================ расписание
     def refresh_table(self) -> None:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QMimeData, QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QDrag, QPixmap
+from PyQt6.QtGui import QCursor, QDrag, QPixmap
 from PyQt6.QtWidgets import QAbstractItemView, QLabel, QListWidget, QTableWidget
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
@@ -28,17 +28,28 @@ class PosterDropLabel(QLabel):
     """Область предпросмотра постера, принимающая файлы перетаскиванием."""
 
     posterDropped = pyqtSignal(str)
+    clicked = pyqtSignal()
 
-    def __init__(self, text: str = "Перетащите постер сюда", parent=None):
+    def __init__(self, text: str = "Выберите файл или перетащите постер сюда", parent=None):
         super().__init__(text, parent)
         self.setAcceptDrops(True)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setMinimumHeight(190)
         self._pixmap: Optional[QPixmap] = None
         self.setObjectName("PosterDrop")
+        self.setToolTip("Нажмите, чтобы выбрать файл, или перетащите изображение сюда")
+        self._apply_style()
+
+    def _apply_style(self, dropping: bool = False) -> None:
+        if dropping:
+            border, background, color = "2px dashed #e23d42", "#1a2440", "#e8edf9"
+        elif self._pixmap:
+            border, background, color = "1px solid #2c3a5e", "#0b1120", "#8e9dc0"
+        else:
+            border, background, color = "2px dashed #2c3a5e", "#151d33", "#8e9dc0"
         self.setStyleSheet(
-            "border: 2px dashed #2c3a5e; border-radius: 10px;"
-            "background: #151d33; color: #8e9dc0;"
+            f"border: {border}; border-radius: 10px; background: {background}; color: {color};"
         )
 
     def set_image(self, path: Optional[Path]) -> None:
@@ -46,11 +57,14 @@ class PosterDropLabel(QLabel):
             pix = QPixmap(str(path))
             if not pix.isNull():
                 self._pixmap = pix
+                self.setText("")
+                self._apply_style()
                 self._rescale()
                 return
         self._pixmap = None
         self.setPixmap(QPixmap())
-        self.setText("Перетащите постер сюда")
+        self.setText("Выберите файл или перетащите постер сюда")
+        self._apply_style()
 
     def _rescale(self) -> None:
         if self._pixmap is None:
@@ -61,6 +75,11 @@ class PosterDropLabel(QLabel):
             Qt.TransformationMode.SmoothTransformation,
         ))
 
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self._rescale()
@@ -68,16 +87,10 @@ class PosterDropLabel(QLabel):
     def dragEnterEvent(self, event):  # noqa: N802
         if _image_paths(event.mimeData()):
             event.acceptProposedAction()
-            self.setStyleSheet(
-                "border: 2px dashed #e23d42; border-radius: 10px;"
-                "background: #1a2440; color: #e8edf9;"
-            )
+            self._apply_style(dropping=True)
 
     def dragLeaveEvent(self, event):  # noqa: N802
-        self.setStyleSheet(
-            "border: 2px dashed #2c3a5e; border-radius: 10px;"
-            "background: #151d33; color: #8e9dc0;"
-        )
+        self._apply_style()
 
     def dropEvent(self, event):  # noqa: N802
         paths = _image_paths(event.mimeData())

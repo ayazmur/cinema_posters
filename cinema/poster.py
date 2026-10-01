@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from .models import CinemaSettings, Movie, Project, Session
 from .storage import resolve_poster
@@ -157,12 +157,30 @@ def add_glow(img: Image.Image, center: Tuple[int, int], radius: int,
 
 
 def rounded_image(path: Path, size: Tuple[int, int], radius: int) -> Image.Image:
-    im = ImageOps.fit(Image.open(path).convert("RGB"), size, Image.Resampling.LANCZOS)
+    """Помещает постер целиком в рамку, не отрезая края.
+
+    Свободное пространство заполняется затемнённой размытой копией постера,
+    чтобы портретные изображения хорошо смотрелись и в широких макетах.
+    """
+    source = ImageOps.exif_transpose(Image.open(path)).convert("RGBA")
+    cover = ImageOps.fit(source.convert("RGB"), size, Image.Resampling.LANCZOS)
+    blur_radius = max(5, int(min(size) * 0.025))
+    cover = cover.filter(ImageFilter.GaussianBlur(blur_radius))
+    cover = ImageEnhance.Brightness(cover).enhance(0.48).convert("RGBA")
+
+    foreground = ImageOps.contain(source, size, Image.Resampling.LANCZOS)
+    x = (size[0] - foreground.width) // 2
+    y = (size[1] - foreground.height) // 2
+    cover.alpha_composite(foreground, (x, y))
+
     mask = Image.new("L", size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1),
-                                           radius=radius, fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, size[0] - 1, size[1] - 1),
+        radius=min(radius, size[0] // 2, size[1] // 2),
+        fill=255,
+    )
     out = Image.new("RGBA", size, (0, 0, 0, 0))
-    out.paste(im, (0, 0), mask)
+    out.paste(cover, (0, 0), mask)
     return out
 
 
@@ -239,7 +257,7 @@ def paste_logo(img: Image.Image, settings: CinemaSettings, box: Sequence[int],
     if not path:
         return False
     try:
-        logo = Image.open(path).convert("RGBA")
+        logo = ImageOps.exif_transpose(Image.open(path)).convert("RGBA")
     except OSError:
         return False
     ratio = logo.width / logo.height
